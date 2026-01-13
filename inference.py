@@ -1,0 +1,279 @@
+import os
+import cv2
+import yaml
+import argparse
+import numpy as np
+import torch
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+from model import load_model
+
+# Load configuration
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
+# Device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+class PlantHealthPredictor:
+    """
+    FIXED: Predictor with consistent normalization
+    """
+    
+    def __init__(self, model_path=None):
+        if model_path is None:
+            model_path = f"{config['paths']['models']}/best_model.pth"
+        
+        if not os.path.exists(model_path):
+            model_path = f"{config['paths']['models']}/model_final.pth"
+        
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found: {model_path}")
+        
+        print(f"■ Loading model: {model_path}")
+        self.model, _ = load_model(model_path, device)
+        self.model.eval()
+        
+        self.img_size = config['image']['size']
+        self.class_names = config['classes']
+        
+        # FIXED: EXACT same normalization as training
+        self.transform = A.Compose([
+            A.Normalize(
+                mean=config['image']['normalize_mean'],
+                std=config['image']['normalize_std'],
+                max_pixel_value=config['image']['max_pixel_value']
+            ),
+            ToTensorV2()
+        ])
+        
+        print(f"✓ Model loaded")
+        print(f"   Classes: {', '.join(self.class_names)}")
+        print(f"   Normalization: mean={config['image']['normalize_mean']}")
+        print(f"                  std={config['image']['normalize_std']}")
+    
+    def preprocess_image(self, image_path):
+        """
+        FIXED: Consistent preprocessing
+        """
+        # Read image
+        img = cv2.imread(image_path)
+        
+        if img is None:
+            raise ValueError(f"Cannot read image: {image_path}")
+        
+        # Convert BGR to RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Resize with same interpolation as training
+        img = cv2.resize(img, (self.img_size, self.img_size),
+                        interpolation=cv2.INTER_LANCZOS4)
+        
+        # Apply EXACT same normalization as training
+        img = self.transform(image=img)['image']
+        
+        # Add batch dimension
+        img = img.unsqueeze(0)
+        
+        return img
+    
+    def predict(self, image_path, return_probabilities=False, 
+                confidence_threshold=None):
+        """
+        FIXED: Prediction with optional threshold
+        """
+        if confidence_threshold is None:
+            confidence_threshold = config['evaluation'].get('confidence_threshold', 0.5)
+        
+        # Preprocess
+        img = self.preprocess_image(image_path)
+        img = img.to(device)
+        
+        # Predict
+        with torch.no_grad():
+            outputs = self.model(img)
+            probabilities = torch.softmax(outputs, dim=1)[0]
+        
+        probabilities = probabilities.cpu().numpy()
+        
+        # Get prediction
+        predicted_idx = np.argmax(probabilities)
+        predicted_class = self.class_names[predicted_idx]
+        confidence = float(probabilities[predicted_idx])
+        
+        # Check threshold
+        low_confidence = confidence < confidence_threshold
+        
+        # Category mapping
+        if predicted_class.startswith("Pest_"):
+            category = "Pest"
+            subtype = predicted_class.replace("Pest_", "")
+        elif predicted_class.startswith("Nutrient_"):
+            category = "Nutrient Deficiency"
+            subtype = predicted_class.replace("Nutrient_", "")
+        else:
+            category = predicted_class
+            subtype = None
+        
+        result = {
+            'predicted_class': predicted_class,
+            'category': category,
+            'subtype': subtype,
+            'confidence': confidence,
+            'confidence_percentage': confidence * 100,
+            'low_confidence': low_confidence,
+            'threshold': confidence_threshold
+        }
+        
+        if return_probabilities:
+            result['all_probabilities'] = {
+                name: float(prob)
+                for name, prob in zip(self.class_names, probabilities)
+            }
+            
+            # Top 3 predictions
+            top3_idx = np.argsort(probabilities)[-3:][::-1]
+            result['top3'] = [
+                {
+                    'class': self.class_names[idx],
+                    'confidence': float(probabilities[idx])
+                }
+                for idx in top3_idx
+            ]
+        
+        return result
+    
+    def predict_with_explanation(self, image_path):
+        """Enhanced prediction with explanations"""
+        result = self.predict(image_path, return_probabilities=True)
+        
+        # Explanations
+        explanations = {
+            "Healthy": "Plant appears healthy. No visible issues detected.",
+            "Pest_Fungal": "Fungal infection detected. Look for powdery spots, mold, or discoloration. Treatment: fungicide.",
+            "Pest_Bacterial": "Bacterial infection detected. Water-soaked lesions or wilting. Treatment: copper-based spray.",
+            "Pest_Insect": "Insect damage detected. Holes, chewed edges, or insect presence. Treatment: insecticide or natural predators.",
+            "Nutrient_Nitrogen": "Nitrogen deficiency. Yellowing of older leaves, stunted growth. Treatment: nitrogen fertilizer.",
+            "Nutrient_Potassium": "Potassium deficiency. Leaf edge browning, weak stems. Treatment: potassium fertilizer.",
+            "Water_Stress": "Water stress detected. Wilting or dry soil. Treatment: adjust watering schedule."
+        }
+        
+        result['explanation'] = explanations.get(
+            result['predicted_class'],
+            "Unable to provide specific explanation."
+        )
+        
+        # Confidence interpretation
+        conf = result['confidence']
+        if conf > 0.85:
+            result['confidence_level'] = "Very High"
+            result['reliability'] = "Highly reliable prediction"
+        elif conf > 0.70:
+            result['confidence_level'] = "High"
+            result['reliability'] = "Reliable prediction"
+        elif conf > 0.55:
+            result['confidence_level'] = "Moderate"
+            result['reliability'] = "Moderately reliable - consider expert review"
+        else:
+            result['confidence_level'] = "Low"
+            result['reliability'] = "Low confidence - manual inspection recommended"
+            result['warning'] = "⚠️  Low confidence prediction. Consider retaking image or consulting expert."
+        
+        return result
+
+
+def print_prediction_result(result):
+    """Pretty print prediction"""
+    print("\n" + "="*70)
+    print("PREDICTION RESULT")
+    print("="*70)
+    
+    if 'error' in result:
+        print(f"\n✗ Error: {result['error']}")
+        return
+    
+    print(f"\nPredicted: {result['predicted_class']}")
+    print(f"Confidence: {result['confidence_percentage']:.2f}%")
+    print(f"Level: {result.get('confidence_level', 'N/A')}")
+    
+    if result.get('low_confidence'):
+        print(f"\n⚠️  Confidence below threshold ({result['threshold']*100:.0f}%)")
+    
+    if 'explanation' in result:
+        print(f"\nExplanation:")
+        print(f"  {result['explanation']}")
+    
+    if 'reliability' in result:
+        print(f"\nReliability: {result['reliability']}")
+    
+    if 'warning' in result:
+        print(f"\n{result['warning']}")
+    
+    # Top 3
+    if 'top3' in result:
+        print(f"\nTop 3 Predictions:")
+        for i, pred in enumerate(result['top3'], 1):
+            print(f"  {i}. {pred['class']:25} {pred['confidence']*100:5.2f}%")
+    
+    # All probabilities
+    if 'all_probabilities' in result:
+        print(f"\nAll Class Probabilities:")
+        for cls, prob in result['all_probabilities'].items():
+            bar_len = int(prob * 40)
+            bar = '█' * bar_len + '░' * (40 - bar_len)
+            print(f"  {cls:25} {bar} {prob*100:5.2f}%")
+    
+    print("="*70 + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Plant Health Inference')
+    
+    parser.add_argument('image_path', type=str, help='Path to plant image')
+    parser.add_argument('--model_path', type=str, default=None, help='Model path')
+    parser.add_argument('--explain', action='store_true', help='Detailed explanation')
+    parser.add_argument('--save', action='store_true', help='Save result to JSON')
+    parser.add_argument('--threshold', type=float, default=None,
+                       help='Confidence threshold (default: 0.5)')
+    
+    args = parser.parse_args()
+    
+    # Initialize predictor
+    try:
+        predictor = PlantHealthPredictor(model_path=args.model_path)
+    except Exception as e:
+        print(f"✗ Error loading model: {e}")
+        return
+    
+    # Predict
+    try:
+        if args.explain:
+            result = predictor.predict_with_explanation(args.image_path)
+        else:
+            result = predictor.predict(
+                args.image_path,
+                return_probabilities=True,
+                confidence_threshold=args.threshold
+            )
+        
+        print_prediction_result(result)
+        
+        # Save
+        if args.save:
+            import json
+            output_path = f"{config['paths']['outputs']}/prediction_result.json"
+            os.makedirs(config['paths']['outputs'], exist_ok=True)
+            
+            with open(output_path, 'w') as f:
+                json.dump(result, f, indent=2)
+            
+            print(f"✓ Result saved: {output_path}\n")
+    
+    except Exception as e:
+        print(f"✗ Prediction error: {e}")
+
+
+if __name__ == "__main__":
+    main()
