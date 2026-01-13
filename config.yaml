@@ -1,6 +1,6 @@
 # Model Configuration
 model:
-  name: 'efficientnet_b2'
+  name: 'efficientnetv2_b2'
   pretrained: true
   num_classes: 7
   dropout: 0.2  # Balanced - not too high, not too low

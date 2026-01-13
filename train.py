@@ -629,7 +629,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--model_name', type=str,
                        default=config['model']['name'],
-                       choices=['efficientnet_b2', 'convnext_tiny', 'resnet50'])
+                       choices=['efficientnetv2_b2', 'convnext_tiny', 'resnet50'])
     
     parser.add_argument('--max_epochs_phase1', type=int, default=60)
     parser.add_argument('--max_epochs_phase2', type=int, default=140)
