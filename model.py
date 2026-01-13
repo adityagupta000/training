@@ -274,14 +274,30 @@ def save_model(model, optimizer, epoch, best_metric, save_path, metric_name='acc
 
 
 def load_model(load_path, device='cuda'):
-    """Load model checkpoint"""
-    checkpoint = torch.load(load_path, map_location=device)
+    """
+    Safely load old PyTorch checkpoints with numpy types in PyTorch >=2.6
+    """
+    import numpy as np
 
+    # Allowlist numpy globals for safe unpickling
+    safe_globals = [
+        np.dtype,
+        np.int64,
+        np.float32,
+        np.float64,
+        np.bool_,
+        np.core.multiarray.scalar
+    ]
+
+    # Use safe_globals context
+    with torch.serialization.safe_globals(safe_globals):
+        checkpoint = torch.load(load_path, map_location=device, weights_only=False)
+
+    # Build model
     model = PlantHealthModel(
         model_name=checkpoint['model_name'],
         num_classes=checkpoint['num_classes']
     )
-
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
 
@@ -292,7 +308,7 @@ def load_model(load_path, device='cuda'):
 
     return model, checkpoint
 
-
+    
 if __name__ == "__main__":
     print("Testing model architecture...")
 

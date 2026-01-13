@@ -21,7 +21,6 @@ os.makedirs(config['paths']['models'], exist_ok=True)
 os.makedirs(config['paths']['logs'], exist_ok=True)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"\n■ Device: {device}")
 
 
 class AverageMeter:
@@ -109,7 +108,7 @@ def train_epoch(model, loader, criterion, optimizer, scaler, use_amp=True, use_m
             
             # Forward with mixup
             if use_amp:
-                with autocast():
+                with torch.amp.autocast(device_type='cuda', enabled=True):
                     outputs = model(mixed_images)
                     loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
             else:
@@ -123,7 +122,7 @@ def train_epoch(model, loader, criterion, optimizer, scaler, use_amp=True, use_m
         else:
             # Standard forward
             if use_amp:
-                with autocast():
+                with torch.amp.autocast(device_type='cuda', enabled=True):
                     outputs = model(images)
                     loss = criterion(outputs, labels)
             else:
@@ -187,7 +186,7 @@ def validate(model, loader, criterion, use_amp=True):
             labels = labels.to(device, non_blocking=True)
             
             if use_amp:
-                with autocast():
+                with torch.amp.autocast(device_type='cuda', enabled=True):
                     outputs = model(images)
                     loss = criterion(outputs, labels)
             else:
@@ -513,7 +512,6 @@ def main(args):
         factor=0.5,
         patience=5,
         min_lr=config['training']['min_lr'],
-        verbose=True
     )
     
     history1, best_f1_p1 = train_phase1(
@@ -550,7 +548,6 @@ def main(args):
         factor=0.5,
         patience=10,
         min_lr=config['training']['min_lr'],
-        verbose=True
     )
     
     history2, best_f1_p2 = train_phase2(
@@ -628,8 +625,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Calibrated Training')
     
     parser.add_argument('--model_name', type=str,
-                       default=config['model']['name'],
-                       choices=['efficientnetv2_b2', 'convnext_tiny', 'resnet50'])
+                       default=None,
+                       help='Model name (defaults to config.yaml)'
+    )
     
     parser.add_argument('--max_epochs_phase1', type=int, default=60)
     parser.add_argument('--max_epochs_phase2', type=int, default=140)
