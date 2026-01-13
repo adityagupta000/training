@@ -29,18 +29,27 @@ class PlantHealthModel(nn.Module):
         self.model_name = model_name
         self.num_classes = num_classes
 
-        # Load base model
-        if model_name == 'efficientnetv2_b2':
-            self.base_model = timm.create_model('efficientnetv2_b2', pretrained=pretrained, num_classes=0)
+        # Normalize model name (remove tf_ prefix if present)
+        timm_model_name = model_name.replace('tf_', '')
+
+        # Load base model using timm
+        try:
+            self.base_model = timm.create_model(
+                timm_model_name, 
+                pretrained=pretrained, 
+                num_classes=0
+            )
             feature_dim = self.base_model.num_features
-        elif model_name == 'convnext_tiny':
-            self.base_model = timm.create_model('convnext_tiny', pretrained=pretrained, num_classes=0)
-            feature_dim = self.base_model.num_features
-        elif model_name == 'resnet50':
-            self.base_model = timm.create_model('resnet50', pretrained=pretrained, num_classes=0)
-            feature_dim = self.base_model.num_features
-        else:
-            raise ValueError(f"Unknown model: {model_name}")
+        except Exception as e:
+            raise ValueError(
+                f"Could not load model '{timm_model_name}' (original: '{model_name}'). "
+                f"Error: {e}\n"
+                f"Try one of these common models:\n"
+                f"  - efficientnetv2_b0, efficientnetv2_b1, efficientnetv2_b2, efficientnetv2_b3\n"
+                f"  - convnext_tiny, convnext_small\n"
+                f"  - resnet50, resnet101\n"
+                f"  - tf_efficientnetv2_b0, tf_efficientnetv2_b2 (will auto-convert to efficientnetv2)"
+            )
 
         # FIXED: Simpler, more stable classification head
         # Reduced dropout prevents feature loss for minority classes
@@ -63,7 +72,7 @@ class PlantHealthModel(nn.Module):
         # Initialize weights
         self._initialize_weights()
 
-        print(f"\n✓ Model architecture: {model_name}")
+        print(f"\n✓ Model architecture: {timm_model_name}")
         print(f"✓ Pretrained weights: {'ImageNet' if pretrained else 'Random'}")
         print(f"✓ Number of classes: {num_classes}")
         print(f"✓ Feature dimension: {feature_dim}")
@@ -126,7 +135,7 @@ class FocalLoss(nn.Module):
     """
     Focal Loss for addressing class imbalance
     FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
-    
+
     Focuses learning on hard, misclassified examples
     Down-weights easy examples (high confidence correct predictions)
     """
@@ -145,7 +154,7 @@ class FocalLoss(nn.Module):
             targets: (N,) class indices
         """
         ce_loss = nn.functional.cross_entropy(
-            inputs, targets, 
+            inputs, targets,
             weight=self.weight,
             reduction='none'
         )
