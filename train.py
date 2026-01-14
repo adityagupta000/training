@@ -2,6 +2,7 @@ import os
 import yaml
 import argparse
 import numpy as np
+import pandas as pd  # ADD THIS IMPORT
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -56,8 +57,8 @@ def get_loss_function(class_weights=None):
             reduction='mean'
         )
         print(f"\n✓ Focal Loss: gamma={focal_gamma}, alpha={focal_alpha}")
-        print(f"   Higher gamma (2.5) for your 5.56:1 imbalance")
-        
+        print(f"  Higher gamma (2.5) for your 5.56:1 imbalance")
+    
     elif use_label_smoothing:
         epsilon = config['training']['label_smoothing']
         criterion = LabelSmoothingCrossEntropy(
@@ -139,13 +140,13 @@ def train_epoch(model, loader, criterion, optimizer, scaler, use_amp=True, use_m
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                          config['training']['gradient_clip'])
+                                         config['training']['gradient_clip'])
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                          config['training']['gradient_clip'])
+                                         config['training']['gradient_clip'])
             optimizer.step()
         
         # Track
@@ -220,16 +221,16 @@ def validate(model, loader, criterion, use_amp=True):
 
 def print_per_class_metrics(per_class_f1, classes, class_counts=None):
     """Print detailed per-class metrics with context"""
-    print("\n   Per-Class F1 Scores:")
+    print("\n  Per-Class F1 Scores:")
     
     for i, (cls, f1) in enumerate(zip(classes, per_class_f1)):
         # Status indicator
         if f1 > 0.65:
             status = "✓"
         elif f1 > 0.45:
-            status = "◐"
+            status = "■"
         elif f1 > 0.25:
-            status = "⚠"
+            status = "■"
         else:
             status = "✗"
         
@@ -238,13 +239,13 @@ def print_per_class_metrics(per_class_f1, classes, class_counts=None):
         if class_counts:
             count = class_counts.get(cls, 0)
             if count < 700:
-                count_str = f" [🔴 {count} samples]"
+                count_str = f"  [■ {count} samples]"
             elif count < 1500:
-                count_str = f" [🟡 {count} samples]"
+                count_str = f"  [■ {count} samples]"
             else:
-                count_str = f" [🟢 {count} samples]"
+                count_str = f"  [■ {count} samples]"
         
-        print(f"      {status} {cls:25} : {f1:.3f}{count_str}")
+        print(f"  {status} {cls:25} : {f1:.3f}{count_str}")
 
 
 def check_class_confusion(labels, preds, classes):
@@ -262,12 +263,28 @@ def check_class_confusion(labels, preds, classes):
         healthy_to_potassium = cm[healthy_idx, n_potassium_idx] / healthy_total
         
         if healthy_to_nitrogen > 0.15 or healthy_to_potassium > 0.15:
-            print("\n   ⚠️  WARNING: Healthy samples being misclassified as Nutrients!")
-            print(f"      Healthy → Nitrogen: {healthy_to_nitrogen*100:.1f}%")
-            print(f"      Healthy → Potassium: {healthy_to_potassium*100:.1f}%")
+            print("\n  ■■ WARNING: Healthy samples being misclassified as Nutrients!")
+            print(f"    Healthy → Nitrogen: {healthy_to_nitrogen*100:.1f}%")
+            print(f"    Healthy → Potassium: {healthy_to_potassium*100:.1f}%")
             return True
     
     return False
+
+
+# ADD THIS NEW FUNCTION
+def save_history_to_csv(history, phase_name):
+    """Save training history to CSV file"""
+    logs_dir = config['paths']['logs']
+    csv_path = os.path.join(logs_dir, f'training_{phase_name}.csv')
+    
+    # Convert history list of dicts to DataFrame
+    df = pd.DataFrame(history)
+    
+    # Save to CSV
+    df.to_csv(csv_path, index=False)
+    print(f"\n✓ Training logs saved: {csv_path}")
+    
+    return csv_path
 
 
 def train_phase1(model, train_loader, val_loader, criterion, optimizer,
@@ -303,26 +320,28 @@ def train_phase1(model, train_loader, val_loader, criterion, optimizer,
         scheduler.step(val_f1)
         
         # Print
-        print(f"\n   Train: Loss={train_loss:.4f} | Acc={train_acc*100:.2f}% | "
+        print(f"\n  Train: Loss={train_loss:.4f} | Acc={train_acc*100:.2f}% | "
               f"F1={train_f1:.3f} | Bal-Acc={train_bal_acc:.3f}")
-        print(f"   Val:   Loss={val_loss:.4f} | Acc={val_acc*100:.2f}% | "
+        print(f"  Val:   Loss={val_loss:.4f} | Acc={val_acc*100:.2f}% | "
               f"F1={val_f1:.3f} | Bal-Acc={val_bal_acc:.3f}")
-        print(f"   LR: {optimizer.param_groups[0]['lr']:.6f}")
+        print(f"  LR: {optimizer.param_groups[0]['lr']:.6f}")
         
         print_per_class_metrics(per_class_f1, config['classes'], class_counts)
         
         # Check for problematic confusion
         confusion_issue = check_class_confusion(val_labels, val_preds, config['classes'])
         
-        # History
+        # History - ADD PROPER STRUCTURE FOR CSV
         history.append({
-            'epoch': epoch,
+            'epoch': epoch + 1,
             'train_loss': train_loss,
+            'train_acc': train_acc,
             'train_f1': train_f1,
+            'train_bal_acc': train_bal_acc,
             'val_loss': val_loss,
+            'val_acc': val_acc,
             'val_f1': val_f1,
-            'val_per_class_f1': per_class_f1.tolist(),
-            'confusion_issue': confusion_issue,
+            'val_bal_acc': val_bal_acc,
             'lr': optimizer.param_groups[0]['lr']
         })
         
@@ -331,13 +350,13 @@ def train_phase1(model, train_loader, val_loader, criterion, optimizer,
             improvement = val_f1 - best_macro_f1
             best_macro_f1 = val_f1
             epochs_no_improve = 0
-            print(f"\n   ✓ NEW BEST Macro-F1: {best_macro_f1:.3f} (+{improvement:.3f})")
+            print(f"\n  ✓ NEW BEST Macro-F1: {best_macro_f1:.3f} (+{improvement:.3f})")
             
             save_path = os.path.join(config['paths']['models'], 'best_model_phase1.pth')
             save_model(model, optimizer, epoch, best_macro_f1, save_path, 'macro_f1')
         else:
             epochs_no_improve += 1
-            print(f"\n   ◐ No improvement: {epochs_no_improve}/{patience} epochs")
+            print(f"\n  ■ No improvement: {epochs_no_improve}/{patience} epochs")
         
         # Phase transition
         if epochs_no_improve >= patience:
@@ -347,7 +366,10 @@ def train_phase1(model, train_loader, val_loader, criterion, optimizer,
             break
     
     print(f"\n■ Phase 1 Complete: {epoch+1} epochs")
-    print(f"   Best Macro-F1: {best_macro_f1:.3f}")
+    print(f"  Best Macro-F1: {best_macro_f1:.3f}")
+    
+    # SAVE PHASE 1 HISTORY TO CSV
+    save_history_to_csv(history, 'phase1')
     
     return history, best_macro_f1
 
@@ -380,23 +402,26 @@ def train_phase2(model, train_loader, val_loader, criterion, optimizer,
         
         scheduler.step(val_f1)
         
-        print(f"\n   Train: Loss={train_loss:.4f} | Acc={train_acc*100:.2f}% | "
+        print(f"\n  Train: Loss={train_loss:.4f} | Acc={train_acc*100:.2f}% | "
               f"F1={train_f1:.3f} | Bal-Acc={train_bal_acc:.3f}")
-        print(f"   Val:   Loss={val_loss:.4f} | Acc={val_acc*100:.2f}% | "
+        print(f"  Val:   Loss={val_loss:.4f} | Acc={val_acc*100:.2f}% | "
               f"F1={val_f1:.3f} | Bal-Acc={val_bal_acc:.3f}")
-        print(f"   LR: {optimizer.param_groups[0]['lr']:.6f}")
+        print(f"  LR: {optimizer.param_groups[0]['lr']:.6f}")
         
         print_per_class_metrics(per_class_f1, config['classes'], class_counts)
         confusion_issue = check_class_confusion(val_labels, val_preds, config['classes'])
         
+        # History - ADD PROPER STRUCTURE FOR CSV
         history.append({
-            'epoch': epoch,
+            'epoch': epoch + 1,
             'train_loss': train_loss,
+            'train_acc': train_acc,
             'train_f1': train_f1,
+            'train_bal_acc': train_bal_acc,
             'val_loss': val_loss,
+            'val_acc': val_acc,
             'val_f1': val_f1,
-            'val_per_class_f1': per_class_f1.tolist(),
-            'confusion_issue': confusion_issue,
+            'val_bal_acc': val_bal_acc,
             'lr': optimizer.param_groups[0]['lr']
         })
         
@@ -404,13 +429,13 @@ def train_phase2(model, train_loader, val_loader, criterion, optimizer,
             improvement = val_f1 - best_macro_f1
             best_macro_f1 = val_f1
             epochs_no_improve = 0
-            print(f"\n   ✓ NEW BEST Macro-F1: {best_macro_f1:.3f} (+{improvement:.3f})")
+            print(f"\n  ✓ NEW BEST Macro-F1: {best_macro_f1:.3f} (+{improvement:.3f})")
             
             save_path = os.path.join(config['paths']['models'], 'best_model.pth')
             save_model(model, optimizer, epoch, best_macro_f1, save_path, 'macro_f1')
         else:
             epochs_no_improve += 1
-            print(f"\n   ◐ No improvement: {epochs_no_improve}/{patience} epochs")
+            print(f"\n  ■ No improvement: {epochs_no_improve}/{patience} epochs")
         
         if epochs_no_improve >= patience:
             print(f"\n{'='*70}")
@@ -419,7 +444,10 @@ def train_phase2(model, train_loader, val_loader, criterion, optimizer,
             break
     
     print(f"\n■ Phase 2 Complete: {epoch+1} epochs")
-    print(f"   Best Macro-F1: {best_macro_f1:.3f}")
+    print(f"  Best Macro-F1: {best_macro_f1:.3f}")
+    
+    # SAVE PHASE 2 HISTORY TO CSV
+    save_history_to_csv(history, 'phase2')
     
     return history, best_macro_f1
 
@@ -430,22 +458,22 @@ def main(args):
     print("CALIBRATED TRAINING - Plant Health Monitoring")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*70)
-    print("\n🎯 OPTIMIZED FOR YOUR DISTRIBUTION:")
-    print("   • Pest_Bacterial: 2780 (MAJORITY)")
-    print("   • Healthy: 1836")
-    print("   • Pest_Fungal: 1720")
-    print("   • Pest_Insect: 991")
-    print("   • Nutrient_Nitrogen: 500 (MINORITY)")
-    print("   • Nutrient_Potassium: 500 (MINORITY)")
-    print("   • Water_Stress: 568 (MINORITY)")
-    print(f"\n   Imbalance Ratio: 5.56:1")
+    print("\n■ OPTIMIZED FOR YOUR DISTRIBUTION:")
+    print("  • Pest_Bacterial: 2780 (MAJORITY)")
+    print("  • Healthy: 1836")
+    print("  • Pest_Fungal: 1720")
+    print("  • Pest_Insect: 991")
+    print("  • Nutrient_Nitrogen: 500 (MINORITY)")
+    print("  • Nutrient_Potassium: 500 (MINORITY)")
+    print("  • Water_Stress: 568 (MINORITY)")
+    print(f"\n  Imbalance Ratio: 5.56:1")
     print("="*70)
-    print("\n🔧 CALIBRATIONS APPLIED:")
-    print("   ✓ Capped class weights (max 5.0)")
-    print("   ✓ Focal Loss gamma=2.5 (for 5.56:1)")
-    print("   ✓ Moderate oversampling (not aggressive)")
-    print("   ✓ Mixup augmentation for boundaries")
-    print("   ✓ Confusion monitoring (Healthy vs Nutrients)")
+    print("\n■ CALIBRATIONS APPLIED:")
+    print("  ✓ Capped class weights (max 5.0)")
+    print("  ✓ Focal Loss gamma=2.5 (for 5.56:1)")
+    print("  ✓ Moderate oversampling (not aggressive)")
+    print("  ✓ Mixup augmentation for boundaries")
+    print("  ✓ Confusion monitoring (Healthy vs Nutrients)")
     print("="*70 + "\n")
     
     # Seeds
@@ -531,7 +559,7 @@ def main(args):
     model.unfreeze_base()
     
     # CRITICAL: Very low LR
-    lr_phase2 = config['training']['initial_lr'] / 25  # Even lower than before
+    lr_phase2 = config['training']['initial_lr'] / 25
     
     optimizer_p2 = optim.AdamW(
         model.parameters(),
@@ -540,7 +568,7 @@ def main(args):
     )
     
     print(f"\n✓ Phase 2 LR: {lr_phase2:.7f} (1/25 of Phase 1)")
-    print("   → Extremely gentle fine-tuning\n")
+    print("  → Extremely gentle fine-tuning\n")
     
     scheduler_p2 = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer_p2,
@@ -576,9 +604,9 @@ def main(args):
     print("FINAL RESULTS")
     print("="*70)
     print(f"\n■ Test Metrics:")
-    print(f"   Accuracy: {test_acc*100:.2f}%")
-    print(f"   Macro-F1: {test_f1:.3f} ⭐")
-    print(f"   Balanced Accuracy: {test_bal_acc:.3f}")
+    print(f"  Accuracy: {test_acc*100:.2f}%")
+    print(f"  Macro-F1: {test_f1:.3f} ■")
+    print(f"  Balanced Accuracy: {test_bal_acc:.3f}")
     
     print("\n■ Per-Class Performance:")
     print_per_class_metrics(test_per_class_f1, config['classes'], config.get('class_counts'))
@@ -593,16 +621,16 @@ def main(args):
     print(f"\n■ Minority Classes Avg F1: {minority_f1:.3f}")
     
     if minority_f1 < 0.35:
-        print("   ⚠️  Still struggling - consider:")
-        print("      • Collect more real minority samples")
-        print("      • Increase focal_gamma to 3.0")
-        print("      • Use aggressive sampling strategy")
+        print("  ■■ Still struggling - consider:")
+        print("    • Collect more real minority samples")
+        print("    • Increase focal_gamma to 3.0")
+        print("    • Use aggressive sampling strategy")
     elif minority_f1 < 0.50:
-        print("   ◐ Improving but suboptimal")
+        print("  ■ Improving but suboptimal")
     else:
-        print("   ✓ Good minority performance!")
+        print("  ✓ Good minority performance!")
     
-    # Save
+    # Save summary
     log_path = os.path.join(config['paths']['logs'], 'calibrated_results.txt')
     with open(log_path, 'w') as f:
         f.write("CALIBRATED TRAINING RESULTS\n")
@@ -626,8 +654,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--model_name', type=str,
                        default=None,
-                       help='Model name (defaults to config.yaml)'
-    )
+                       help='Model name (defaults to config.yaml)')
     
     parser.add_argument('--max_epochs_phase1', type=int, default=60)
     parser.add_argument('--max_epochs_phase2', type=int, default=140)
