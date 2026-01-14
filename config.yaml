@@ -36,7 +36,7 @@ training:
   # FOCAL LOSS - CALIBRATED
   use_focal_loss: true
   focal_alpha: 0.25
-  focal_gamma: 2.5  # Increased to 2.5 for your 5.56:1 ratio
+  focal_gamma: 1.5  # Increased to 2.5 for your 5.56:1 ratio
   
   # CLASS WEIGHTING - MODERATE (prevents over-prediction of minority)
   use_class_weights: true
@@ -106,7 +106,7 @@ evaluation:
   # THRESHOLD OPTIMIZATION
   use_adaptive_threshold: true
   per_class_thresholds: true  # Different threshold per class
-  default_threshold: 0.55
+  default_threshold: 0.60
   
   # Minimum acceptable F1 per class
   min_acceptable_f1:
