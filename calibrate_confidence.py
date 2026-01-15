@@ -454,7 +454,7 @@ def main():
     parser = argparse.ArgumentParser(description='Temperature Scaling Calibration')
     parser.add_argument('--model_path', type=str, default=None,
                        help='Path to trained model (default: best_model.pth)')
-    parser.add_argument('--output_name', type=str, default='calibrated_model.pth',
+    parser.add_argument('--output_name', type=str, default='plant_health_v1.pth',
                        help='Output name for calibrated model')
     parser.add_argument('--init_temp', type=float, default=1.5,
                        help='Initial temperature for optimization')
