@@ -144,7 +144,7 @@ def plot_roc_curves(y_true, y_pred_proba, class_names):
     
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22']
+    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#95a5a6']  
     
     for i, (color, class_name) in enumerate(zip(colors, class_names)):
         fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_pred_proba[:, i])
@@ -259,7 +259,7 @@ def main():
     """Main evaluation pipeline"""
     
     # Load test data
-    _, _, test_loader = get_data_loaders(batch_size=32)
+    _, _, test_loader = get_data_loaders(batch_size=16)
     
     # Model path
     model_path = f"{config['paths']['models']}/best_model.pth"

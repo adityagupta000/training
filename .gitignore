@@ -4,3 +4,5 @@ data/
 outputs/
 saved_models/
 logs/
+venv/
+__pycache__/

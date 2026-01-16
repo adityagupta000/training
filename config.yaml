@@ -1,9 +1,9 @@
 # Model Configuration
 model:
-  name: 'efficientnet_b2'
+  name: "efficientnet_b2"
   pretrained: true
-  num_classes: 7
-  dropout: 0.2  # Balanced - not too high, not too low
+  num_classes: 8 # CHANGED: 7 → 8
+  dropout: 0.2
   unfreeze_layers: 35
 
 # Image Configuration
@@ -16,46 +16,46 @@ image:
 
 # Data Split
 data:
-  train_split: 0.7
-  val_split: 0.15
-  test_split: 0.15
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
   random_seed: 42
 
-# Training Configuration - OPTIMIZED FOR YOUR SPECIFIC DISTRIBUTION
+# Training Configuration
 training:
-  batch_size: 32
+  batch_size: 16
   epochs: 200
-  initial_lr: 0.0003  # Lower starting point
+  initial_lr: 0.0003
   min_lr: 0.000001
   patience: 20
   phase1_transition_patience: 8
   use_mixed_precision: true
   gradient_clip: 1.0
   num_workers: 4
-  
-  # FOCAL LOSS - CALIBRATED
+
+  # FOCAL LOSS
   use_focal_loss: true
   focal_alpha: 0.25
-  focal_gamma: 1.5  # Increased to 2.5 for your 5.56:1 ratio
-  
-  # CLASS WEIGHTING - MODERATE (prevents over-prediction of minority)
+  focal_gamma: 1.5
+
+  # CLASS WEIGHTING
   use_class_weights: true
-  class_weight_method: 'balanced'  # sqrt, balanced, or inverse_freq
-  class_weight_power: 1.0  # Linear scaling (not exponential)
-  max_weight_cap: 5.0  # CAP maximum weight to prevent over-correction
-  
+  class_weight_method: "balanced"
+  class_weight_power: 1.0
+  max_weight_cap: 5.0
+
   # LABEL SMOOTHING
   label_smoothing: 0.1
-  
+
   # SAMPLING STRATEGY
   oversample_minority: true
-  sampling_strategy: 'moderate'  # Options: aggressive, moderate, conservative
-  
-  # CONFIDENCE CALIBRATION
-  temperature_scaling: true  # Post-training calibration
-  mixup_alpha: 0.2  # Mixup augmentation for better boundaries
+  sampling_strategy: "moderate"
 
-# Data Augmentation - MODERATE
+  # CONFIDENCE CALIBRATION
+  temperature_scaling: true
+  mixup_alpha: 0.2
+
+# Data Augmentation
 augmentation:
   rotation_range: 25
   width_shift: 0.12
@@ -66,17 +66,18 @@ augmentation:
   brightness_range: [0.85, 1.15]
   augmentation_prob: 0.65
 
-# Class Information (in order)
+# Class Information (UPDATED - Added Not_Plant)
 classes:
-  - Healthy              # 1836
-  - Pest_Fungal          # 1720
-  - Pest_Bacterial       # 2780 (MAJORITY)
-  - Pest_Insect          # 991
-  - Nutrient_Nitrogen    # 500 (MINORITY)
-  - Nutrient_Potassium   # 500 (MINORITY)
-  - Water_Stress         # 568 (MINORITY)
+  - Healthy
+  - Pest_Fungal
+  - Pest_Bacterial
+  - Pest_Insect
+  - Nutrient_Nitrogen
+  - Nutrient_Potassium
+  - Water_Stress
+  - Not_Plant
 
-# EXPECTED CLASS COUNTS (for reference)
+# EXPECTED CLASS COUNTS (UPDATED)
 class_counts:
   Healthy: 1836
   Pest_Fungal: 1720
@@ -85,33 +86,32 @@ class_counts:
   Nutrient_Nitrogen: 500
   Nutrient_Potassium: 500
   Water_Stress: 568
+  Not_Plant: 409 
 
 # Paths
 paths:
-  raw_data: 'data/raw'
-  processed_data: 'data/processed'
-  splits: 'data/splits'
-  models: 'saved_models'
-  logs: 'logs'
-  outputs: 'outputs'
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  splits: "data/splits"
+  models: "saved_models"
+  logs: "logs"
+  outputs: "outputs"
 
 # EVALUATION METRICS
 evaluation:
-  primary_metric: 'macro_f1'  # Primary optimization target
+  primary_metric: "macro_f1"
   secondary_metrics:
-    - 'balanced_accuracy'
-    - 'per_class_f1'
-    - 'confusion_matrix'
-  
-  # THRESHOLD OPTIMIZATION
+    - "balanced_accuracy"
+    - "per_class_f1"
+    - "confusion_matrix"
+
   use_adaptive_threshold: true
-  per_class_thresholds: true  # Different threshold per class
+  per_class_thresholds: true
   default_threshold: 0.60
-  
-  # Minimum acceptable F1 per class
+
   min_acceptable_f1:
-    majority_classes: 0.70  # Healthy, Pest_Bacterial, Pest_Fungal
-    minority_classes: 0.50  # Nutrients, Water_Stress
-  
+    majority_classes: 0.70
+    minority_classes: 0.50
+
   confidence_calibration: true
-  calibration_method: 'temperature_scaling'
+  calibration_method: "temperature_scaling"

@@ -117,7 +117,7 @@ def get_augmentation_pipeline():
                 drop_color=(200, 200, 200),
                 blur_value=3,
                 brightness_coefficient=0.9,
-                rain_type=None,
+                rain_type="default",
                 p=1
             ),
         ], p=0.3),

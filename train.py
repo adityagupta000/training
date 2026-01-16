@@ -92,10 +92,7 @@ def train_epoch(model, loader, criterion, optimizer, scaler, use_amp=True, use_m
     pbar = tqdm(loader, desc='Training')
     
     for batch_data in pbar:
-        if use_mixup:
-            images, labels, _ = batch_data
-        else:
-            images, labels = batch_data
+        images, labels = batch_data
         
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
@@ -466,7 +463,8 @@ def main(args):
     print("  • Nutrient_Nitrogen: 500 (MINORITY)")
     print("  • Nutrient_Potassium: 500 (MINORITY)")
     print("  • Water_Stress: 568 (MINORITY)")
-    print(f"\n  Imbalance Ratio: 5.56:1")
+    print("  • Not_Plant: 409 (MINORITY)")
+    print(f"\n  Imbalance Ratio: 6.80:1")
     print("="*70)
     print("\n■ CALIBRATIONS APPLIED:")
     print("  ✓ Capped class weights (max 5.0)")
@@ -615,7 +613,7 @@ def main(args):
     check_class_confusion(test_labels, test_preds, config['classes'])
     
     # Minority analysis
-    minority_indices = [4, 5, 6]  # Nitrogen, Potassium, Water_Stress
+    minority_indices = [4, 5, 6, 7]  # Nitrogen, Potassium, Water_Stress, Not_Plant
     minority_f1 = np.mean([test_per_class_f1[i] for i in minority_indices])
     
     print(f"\n■ Minority Classes Avg F1: {minority_f1:.3f}")

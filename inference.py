@@ -13,6 +13,7 @@ Usage remains the same:
 """
 
 import os
+from unittest import result
 import cv2
 import yaml
 import argparse
@@ -153,6 +154,9 @@ class PlantHealthPredictor:
         elif predicted_class.startswith("Nutrient_"):
             category = "Nutrient Deficiency"
             subtype = predicted_class.replace("Nutrient_", "")
+        elif predicted_class == "Not_Plant":  
+            category = "Invalid Input"  
+            subtype = None
         else:
             category = predicted_class
             subtype = None
@@ -199,7 +203,8 @@ class PlantHealthPredictor:
             "Pest_Insect": "Insect damage detected. Holes, chewed edges, or insect presence. Treatment: insecticide or natural predators.",
             "Nutrient_Nitrogen": "Nitrogen deficiency. Yellowing of older leaves, stunted growth. Treatment: nitrogen fertilizer.",
             "Nutrient_Potassium": "Potassium deficiency. Leaf edge browning, weak stems. Treatment: potassium fertilizer.",
-            "Water_Stress": "Water stress detected. Wilting or dry soil. Treatment: adjust watering schedule."
+            "Water_Stress": "Water stress detected. Wilting or dry soil. Treatment: adjust watering schedule.",
+            "Not_Plant": "This is not a plant image. Please upload a clear image of a plant leaf for disease detection."
         }
         
         result['explanation'] = explanations.get(
@@ -211,7 +216,6 @@ class PlantHealthPredictor:
         conf = result['confidence']
         
         if self.is_calibrated:
-            # Calibrated confidence thresholds (more trustworthy)
             if conf > 0.80:
                 result['confidence_level'] = "Very High"
                 result['reliability'] = "Highly reliable - calibrated confidence"
@@ -224,7 +228,11 @@ class PlantHealthPredictor:
             else:
                 result['confidence_level'] = "Low"
                 result['reliability'] = "Low confidence - manual inspection recommended"
-                result['warning'] = "⚠ Low confidence prediction. Consider retaking image or consulting expert."
+   
+                if result['predicted_class'] == 'Not_Plant':
+                    result['warning'] = "■ Non-plant image detected. Please upload a plant leaf image."
+                else:
+                    result['warning'] = "■ Low confidence prediction. Consider retaking image or consulting expert."
         else:
             # Uncalibrated (original thresholds - less reliable)
             if conf > 0.85:
@@ -239,7 +247,10 @@ class PlantHealthPredictor:
             else:
                 result['confidence_level'] = "Low"
                 result['reliability'] = "Low confidence - manual inspection recommended"
-                result['warning'] = "⚠ Low confidence. Model not calibrated - run calibrate_confidence.py"
+                if result['predicted_class'] == 'Not_Plant':
+                    result['warning'] = "■ Non-plant image detected. Please upload a plant leaf image."
+                else:
+                    result['warning'] = "■ Low confidence. Model not calibrated - run calibrate_confidence.py"
         
         return result
 

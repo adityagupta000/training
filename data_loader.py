@@ -1,3 +1,4 @@
+from cProfile import label
 import os
 import cv2
 import yaml
@@ -86,20 +87,16 @@ class PlantHealthDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path, label = self.data[idx]
-
+    
         img = cv2.imread(img_path)
         if img is None:
             img = np.zeros((self.img_size, self.img_size, 3), dtype=np.uint8)
         else:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+    
         augmented = self.transform(image=img)
         img_tensor = augmented['image']
-
-        # Mixup augmentation (if enabled)
-        if self.mixup_alpha > 0 and self.augment:
-            return img_tensor, label, idx  # Return idx for mixup
-
+    
         return img_tensor, label
 
     def get_labels(self):
